@@ -1,0 +1,17 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+$\phi(B) x_t = 0.004475 + \theta(B) y_t,$
+
+where:
+
+$\phi(B)=1-0.977331B+0.066279B^2$
+
+$\theta(B)=1-0.922770B$
+
+$y_t=\sigma_t \epsilon_t$
+
+$var(y_t|y_{t-1})=\sigma ^2= 0.013310+ 0.081586y_{t-1}^2 + 0.906601 \sigma_{t-1}^2$

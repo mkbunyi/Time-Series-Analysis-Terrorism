@@ -1,0 +1,166 @@
+---
+title: "Project EDA"
+author: "Mary Kryslette C. Bunyi"
+date: "2/10/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loads, warning=FALSE, include = FALSE}
+
+#Load libraries
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+
+library(tidyverse)
+library(ggplot2)
+library(forecast)
+library(astsa) 
+library(xts)
+library(tseries)
+library(fpp2)
+library(fma)
+library(lubridate)
+library(TSstudio)
+library(quantmod)
+library(tidyquant)
+library(plotly)
+
+#Load data
+vix <- read.csv('Data/VIX.csv')
+vxeem <- read.csv('Data/VXEEM_History.csv')
+gtd_monthly <- read.csv('Data/gtd_monthly.csv')
+
+gtdcount.ts <- ts(data=gtd_monthly$count,
+   frequency=12,
+   start=c(1970,1))
+     
+
+# convert to date
+vix$DATE <- as.Date(vix$DATE, format="%Y-%m-%d")
+vxeem$DATE <- as.Date(vxeem$DATE, format="%m/%d/%Y")
+
+#daily data
+vix.ts = ts(data = vix$VIXCLS, 
+           start = decimal_date(vix$DATE[1]),
+           frequency = 365.25)
+
+vxeem.ts = ts(data = vxeem$CLOSE, 
+           start = decimal_date(vxeem$DATE[1]),
+           frequency = 365.25)
+
+
+gtd_monthly <-
+  gtd_monthly %>%
+  mutate(date = as.Date(paste0(iyear,'-',imonth,'-1'),
+                        format="%Y-%m-%d"))
+
+
+gtd_monthly_1990 <- gtd_monthly %>% filter(iyear>=1990) %>% ungroup()
+
+vix_monthly_2018 <-
+  vix %>%
+  filter(year(DATE)<=2018) %>%
+  mutate(month = month(DATE),
+         year = year(DATE),
+         VIXCLS=as.numeric(VIXCLS)) %>%
+  group_by(year,month) %>%
+  summarize(average=mean(VIXCLS, na.rm=TRUE)) %>%
+  ungroup() %>%
+  mutate(date = as.Date(paste0(year,'-',month,'-1'),
+                        format="%Y-%m-%d")) 
+
+```
+
+
+
+```{r}
+# plot data
+autoplot(gtdcount.ts)  +
+  ggtitle("Monthly Global Terrorism Incidents (1970-2018)") +
+  xlab("Year") +
+  ylab("Number")
+```
+
+
+```{r}
+gtdcount.ts_2003 <- window(gtdcount.ts,start=2003)
+gglagplot(gtdcount.ts)
+gglagplot(gtdcount.ts_2003)
+```
+
+
+
+```{r}
+decomp_gtdcount_add = decompose(gtdcount.ts, "additive")
+plot(decomp_gtdcount_add)
+```
+
+```{r}
+decomp_gtdcount_mul = decompose(gtdcount.ts, "multiplicative")
+plot(decomp_gtdcount_mul)
+```
+
+```{r}
+par(mar=c(5,6,4,1)+.1)
+acf(gtdcount.ts,
+    main="Monthly Global Terrorism Incidents ACF Plot")
+```
+
+```{r}
+tseries::adf.test(gtdcount.ts)
+```
+
+```{r}
+par(mar=c(5,6,4,1)+.1)
+pacf(gtdcount.ts,
+    main="Monthly Global Terrorism Incidents PACF Plot")
+```
+
+## If the series is not stationary, use a necessary method/s to make the series stationary. Plot the ACF to see its stationarity.
+```{r}
+par(mfrow=c(2,1))
+plot(gtdcount.ts, main="Original Series")
+plot(diff(gtdcount.ts), main="1st Order Differencing")
+```
+
+```{r}
+plot(diff(log(gtdcount.ts)))
+```
+
+
+```{r fig.height=8 fig.width=6}
+par(mar=c(4,4,4,1))
+par(mfrow=c(2,1))
+acf(gtdcount.ts, main="Original Series")
+acf(diff(gtdcount.ts), main="1st Order Differencing")
+```
+
+```{r}
+tseries::adf.test(diff(gtdcount.ts))
+```
+
+## MA Smoothing
+
+
+```{r}
+autoplot(gtdcount.ts, series="Data") +
+  autolayer(ma(gtdcount.ts,6), series="0.5-year (6-month) MA",lwd=.75) +
+  autolayer(ma(gtdcount.ts,12), series="1-year (12-month) MA",lwd=.75) +
+  autolayer(ma(gtdcount.ts,30), series="2.5-year (30-month) MA",lwd=.75) +
+  autolayer(ma(gtdcount.ts,57), series="4.75-year (57-month) MA",lwd=.75) +
+  autolayer(ma(gtdcount.ts,99), series="8.25-year (99-month) MA",lwd=.75) +
+  xlab("Year") + ylab("Count") +
+  ggtitle("Monthly Global Terrorism Incidents") +
+  theme_bw() +
+  scale_colour_brewer(palette = "Dark2") +
+  theme(legend.position = "bottom")
+
+```

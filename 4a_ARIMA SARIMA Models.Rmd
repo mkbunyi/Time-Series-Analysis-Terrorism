@@ -1,0 +1,532 @@
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loads, warning=FALSE, include = FALSE}
+
+#Load libraries
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+
+library(tidyverse)
+library(ggplot2)
+library(forecast)
+library(astsa) 
+library(xts)
+library(tseries)
+library(fpp2)
+library(fma)
+library(lubridate)
+library(TSstudio)
+library(quantmod)
+library(tidyquant)
+library(plotly)
+
+#Load data
+vix <- read.csv('Data/VIX.csv')
+vxeem <- read.csv('Data/VXEEM_History.csv')
+gtd_monthly <- read.csv('Data/gtd_monthly.csv')
+
+gtdcount.ts <- ts(data=gtd_monthly$count,
+   frequency=12,
+   start=c(1970,1))
+     
+
+# convert to date
+vix$DATE <- as.Date(vix$DATE, format="%Y-%m-%d")
+vxeem$DATE <- as.Date(vxeem$DATE, format="%m/%d/%Y")
+
+#daily data
+vix.ts = ts(data = vix$VIXCLS, 
+           start = decimal_date(vix$DATE[1]),
+           frequency = 365.25)
+
+vxeem.ts = ts(data = vxeem$CLOSE, 
+           start = decimal_date(vxeem$DATE[1]),
+           frequency = 365.25)
+
+
+gtd_monthly <-
+  gtd_monthly %>%
+  mutate(date = as.Date(paste0(iyear,'-',imonth,'-1'),
+                        format="%Y-%m-%d"))
+
+
+gtd_monthly_1990 <- gtd_monthly %>% filter(iyear>=1990) %>% ungroup()
+
+vix_monthly_2018 <-
+  vix %>%
+  filter(year(DATE)<=2018) %>%
+  mutate(month = month(DATE),
+         year = year(DATE),
+         VIXCLS=as.numeric(VIXCLS)) %>%
+  group_by(year,month) %>%
+  summarize(average=mean(VIXCLS, na.rm=TRUE)) %>%
+  ungroup() %>%
+  mutate(date = as.Date(paste0(year,'-',month,'-1'),
+                        format="%Y-%m-%d")) 
+
+```
+
+
+```{r}
+# plot data
+autoplot(gtdcount.ts)  +
+  ggtitle("Monthly Global Terrorism Incidents (1970-2018)") +
+  xlab("Year") +
+  ylab("Number")
+```
+
+```{r}
+par(mar=c(5,6,4,1)+.1)
+acf(gtdcount.ts,
+    main="Monthly Global Terrorism Incidents ACF Plot")
+```
+
+```{r}
+tseries::adf.test(gtdcount.ts)
+```
+
+```{r}
+par(mfrow=c(2,1))
+plot(gtdcount.ts, main="Original Series")
+plot(diff(gtdcount.ts), main="1st Order Differencing")
+```
+
+```{r fig.height=8 fig.width=6}
+par(mar=c(4,4,4,1))
+par(mfrow=c(2,1))
+acf(gtdcount.ts, main="Original Series")
+acf(diff(gtdcount.ts), main="1st Order Differencing")
+```
+
+```{r}
+tseries::adf.test(diff(gtdcount.ts))
+```
+
+
+```{r fig.height=6}
+par(mar=c(4,4,4,1))
+par(mfrow=c(2,1))
+acf(diff(gtdcount.ts), main="1st Order Differencing")
+pacf(diff(gtdcount.ts), main="1st Order Differencing")
+```
+
+
+```{r}
+## empty list to store model fits
+ARMA_res <- list()
+## set counter
+cc <- 1
+## loop over AR
+for (p in 0:1) {
+  ## loop over MA
+  for (q in 1:5) {
+    if (p+q+1<7) {
+    ARMA_res[[cc]] <- Arima(gtdcount.ts, order = c(p, 1,q))
+    cc <- cc + 1
+    }
+  }
+}
+```
+
+
+```{r}
+## get AIC values for model evaluation
+ARMA_AIC <- sapply(ARMA_res, function(x) x$aic)
+## model with lowest AIC is the best
+ARMA_res[[which(ARMA_AIC == min(ARMA_AIC))]]
+```
+
+
+```{r}
+## get BIC values for model evaluation
+ARMA_BIC <- sapply(ARMA_res, function(x) x$bic)
+## model with lowest AIC is the best
+ARMA_res[[which(ARMA_BIC == min(ARMA_BIC))]]
+```
+
+```{r}
+## get AICc values for model evaluation
+ARMA_AICc <- sapply(ARMA_res, function(x) x$aicc)
+## model with lowest AIC is the best
+ARMA_res[[which(ARMA_AICc == min(ARMA_AICc))]]
+```
+$$(1-B)x_t = (1-0.5231B)\omega_{t}$$
+$$x_t-Bx_t = \omega_{t}-0.5231B\omega_{t}$$
+
+
+
+```{r}
+fit2 <- Arima(gtdcount.ts, order=c(0,1,1),
+              include.drift=TRUE)
+summary(fit2)
+```
+
+
+
+```{r}
+sarima(gtdcount.ts, p=0,d=1,q=1)
+```
+
+```{r}
+auto.arima(gtdcount.ts)
+```
+
+```{r fig.height=6}
+fit<-Arima(gtdcount.ts,order=c(0,1,1),include.drift=TRUE)
+pred=forecast(fit,12)
+accuracy(pred)
+plot(pred)
+
+```
+
+```{r}
+
+checkresiduals(fit,h=12)
+
+f1 <-meanf(gtdcount.ts,h=12)
+accuracy(f1)
+checkresiduals(f1)
+
+f2 <- naive(gtdcount.ts, h=12) 
+accuracy(f2) 
+checkresiduals(f2)
+
+f3 <- rwf(gtdcount.ts,drift=FALSE, h=12) 
+accuracy(f3)  
+checkresiduals(f3)
+
+```
+
+
+calculate MAE and MSE for your ARIMA fit and benchmark methods and compare.
+```{r}
+## MAE
+# ARIMA Fit
+(mae1 <- abs(mean(as.numeric(pred$mean)-as.numeric((gtdcount.ts)))))
+# Average method
+(mae11 <- abs(mean(as.numeric(f1$mean)-as.numeric((gtdcount.ts)))))
+# Naive
+(mae12 <- abs(mean((as.numeric(f2$mean)-as.numeric((gtdcount.ts))))))
+# Random walk
+(mae13 <- abs(mean((as.numeric(f3$mean)-as.numeric((gtdcount.ts))))))
+```
+
+
+```{r}
+## MSE
+# ARIMA Fit
+(mse1 <- mean((pred$mean-gtdcount.ts)^2))
+# Average method
+(mse11 <- mean((f1$mean-gtdcount.ts)^2))
+# Naive
+(mse12 <- mean((f2$mean-gtdcount.ts)^2))
+# Random walk
+(mse13 <- mean((f3$mean-gtdcount.ts)^2))
+```
+
+
+```{r}
+autoplot(gtdcount.ts) +
+  autolayer(meanf(gtdcount.ts, h=50),
+            series="Mean", PI=FALSE) +
+  autolayer(naive(gtdcount.ts, h=50),
+             series="Naive", PI=FALSE) +
+   autolayer(rwf(gtdcount.ts, drift=FALSE, h=50),
+             series="Drift", PI=FALSE) +
+   autolayer(ts(forecast(fit,h=50)$mean,start=2019,frequency=12),
+              series="fit",PI=FALSE) +
+   ggtitle("DC Temperature") +
+   xlab("Day") + ylab("Temperature (in deg F)") +
+   guides(colour=guide_legend(title="Forecast"))
+```
+
+
+
+```{r}
+length(gtdcount.ts)
+train=gtdcount.ts[1:480] #40 years
+test=gtdcount.ts[481:length(gtdcount.ts)] #10 years
+length(train)
+length(test)
+
+fit<-Arima(train,order=c(0,1,1),include.drift=TRUE)
+summary(fit)
+
+```
+
+
+g. forecast using the test set.
+```{r}
+pred=forecast(fit,108)
+accuracy(pred)
+plot(pred)
+
+```
+
+h. Try the benchmark methods.
+```{r}
+checkresiduals(pred)
+
+f1 <-meanf(train,h=108)
+accuracy(f1)
+checkresiduals(f1)
+
+f2 <- naive(train, h=108) 
+accuracy(f2) 
+checkresiduals(f2)
+
+f3 <- rwf(train,drift=FALSE, h=108) 
+accuracy(f3)  
+checkresiduals(f3)
+
+```
+
+
+
+i. calculate MAE and MSE for your ARIMA fit and benchmark methods and compare.
+```{r}
+## MAE
+# ARIMA Fit
+(mae1 <- abs(mean(as.numeric(pred$mean)-as.numeric((test)))))
+# Average method
+(mae11 <- abs(mean(as.numeric(f1$mean)-as.numeric((test)))))
+# Naive
+(mae12 <- abs(mean((as.numeric(f2$mean)-as.numeric((test))))))
+# Random walk
+(mae13 <- abs(mean((as.numeric(f3$mean)-as.numeric((test))))))
+
+
+```
+```{r}
+## MSE
+# ARIMA Fit
+(mse1 <- mean((pred$mean-test)^2))
+# Average method
+(mse11 <- mean((f1$mean-test)^2))
+# Naive
+(mse12 <- mean((f2$mean-test)^2))
+# Random walk
+(mse13 <- mean((f3$mean-test)^2))
+```
+
+
+
+j. Which model is good?
+```{r}
+autoplot(gtdcount.ts) +
+  autolayer(meanf(gtdcount.ts,h=108),
+            series="Mean", PI=FALSE) +
+  autolayer(naive(gtdcount.ts, h=108),
+             series="Naive", PI=FALSE) +
+   autolayer(rwf(gtdcount.ts, drift=FALSE, h=108),
+             series="Drift", PI=FALSE) #+
+   autolayer(ts(forecast(fit,h=108)$mean),
+              series="ARIMA ",PI=FALSE) +
+   ggtitle("DC Temperature") +
+   xlab("Day") + ylab("Temperature (in deg F)") +
+   guides(colour=guide_legend(title="Forecast"))
+
+```
+
+
+## SARIMA
+
+```{r}
+gtdcount.ts %>% ggtsdisplay(main="Observed data")
+```
+
+```{r}
+gtdcount.ts %>% diff() %>% ggtsdisplay(main="First ordinary differencing")
+```
+```{r}
+gtdcount.ts %>% diff(lag=12) %>% diff() %>% ggtsdisplay(main="First ordinary and first seasonal differencing")
+```
+
+```{r}
+gtdcount.ts %>% diff(lag=12) %>% ggtsdisplay(main="First seasonal differencing")
+```
+
+```{r}
+gtdcount.ts.mo = matrix(gtdcount.ts, ncol=12,byrow=TRUE)
+col.means=apply(gtdcount.ts.mo,2,mean)
+plot(col.means,type="b", main="Monthly Means Plot for Terrorism Incidence", xlab="Month", ylab="Mean")
+```
+
+```{r}
+#write a funtion
+SARIMA.c=function(p1,p2,q1,q2,P1,P2,Q1,Q2,d,D,s,data){
+  
+#K=(p2+1)*(q2+1)*(P2+1)*(Q2+1)
+  
+  temp=c()
+  
+  i=1
+  temp= data.frame()
+  ls=matrix(rep(NA,9*100),nrow=100)
+  
+  
+  for (p in p1:p2)
+  {
+    for(q in q1:q2)
+    {
+      for(P in P1:P2)
+      {
+        for(Q in Q1:Q2)
+        {
+          if(p+d+q+P+D+Q<=10)
+          {
+            
+            try({model<- Arima(data,order=c(p,d,q),seasonal=list(order=c(P,D,Q),period=s));
+            ls[i,]= c(p,d,q,P,D,Q,model$aic,model$bic,model$aicc);
+            i=i+1})
+            #print(c(p,d,q,P,D,Q))
+            
+          }
+          
+        }
+      }
+    }
+    
+  }
+  
+  
+  temp= as.data.frame(ls)
+  names(temp)= c("p","d","q","P","D","Q","AIC","BIC","AICc")
+  
+  temp
+  
+}
+```
+
+
+```{r}
+# p= 1,2 P= 1,2 or 3 maybe?
+# q= 1. Q= 1
+output=SARIMA.c(p1=0,p2=2,q1=0,q2=1,P1=0,P2=3,Q1=0,Q2=1,d=1,D=1,s=12,data=gtdcount.ts)
+
+minaic=output[which.min(output$AIC),]
+minbic=output[which.min(output$BIC),]
+minaicc=output[which.min(output$AICc),]
+
+minaic
+minbic
+minaicc
+```
+
+```{r}
+output=SARIMA.c(p1=0,p2=2,q1=0,q2=1,P1=0,P2=3,Q1=0,Q2=1,d=0,D=1,s=12,data=gtdcount.ts)
+
+minaic=output[which.min(output$AIC),]
+minbic=output[which.min(output$BIC),]
+minaicc=output[which.min(output$AICc),]
+
+minaic
+minbic
+minaicc
+```
+
+```{r}
+fit.sarima<-Arima(gtdcount.ts,order=c(0,1,1),seasonal=list(order=c(0,1,1),period=12))
+summary(fit.sarima)
+```
+
+Equation:
+$$(1-B^{12})(1-B)x_t = (1-0.9090B^{12})(1-0.5116B)\omega_{t}$$
+$$x_t=x_{t-1}+x_{t-12}-x_{t-13}+\omega_{t}-0.5116\omega_{t-1}-0.9090\omega_{t-12}+0.4650\omega_{t-13}$$
+
+
+```{r}
+sarima(gtdcount.ts, p=0,d=1,q=1,P=0,D=1,Q=1,S=12)
+```
+
+```{r}
+fit<-Arima(gtdcount.ts,order=c(0,1,1),seasonal=list(order=c(0,1,1),period=12))
+pred=forecast(fit,12)
+accuracy(pred)
+plot(pred)
+
+```
+
+```{r}
+checkresiduals(fit,h=12)
+```
+
+calculate MAE and MSE for your ARIMA fit and benchmark methods and compare.
+```{r}
+## MAE
+# ARIMA Fit
+(mae1 <- abs(mean(as.numeric(pred$mean)-as.numeric((gtdcount.ts)))))
+## MSE
+# ARIMA Fit
+(mse1 <- mean((as.numeric(pred$mean)-as.numeric(gtdcount.ts))^2))
+```
+
+```{r}
+autoplot(gtdcount.ts,
+         main="Global Terrorism Forecasts",
+         ylab="Terrorism Incidents",
+         xlab="Date") +
+autolayer(meanf(gtdcount.ts, h=12),
+series="Mean", PI=FALSE) +
+autolayer(naive(gtdcount.ts, h=12),
+series="Naïve", PI=FALSE) +
+autolayer(rwf(gtdcount.ts, drift=TRUE, h=12),
+series="Drift", PI=FALSE)+
+autolayer(forecast(fit,12),
+series="ARIMA(0,1,1)(0,1,1)[12]",PI=FALSE) +
+guides(colour=guide_legend(title="Forecast"))+
+  theme_bw()+
+theme(legend.position="bottom")
+  
+```
+
+```{r}
+farima1 <- function(x, h){forecast(Arima(gtdcount.ts,order=c(0,1,1),seasonal=list(order=c(0,1,1),period=12)), h=h)}
+```
+
+```{r}
+# Compute cross-validated errors for up to 12 steps ahead
+e12 <- tsCV(gtdcount.ts, forecastfunction = farima1, h = 12)
+length(e12)
+
+# Compute the MSE values and remove missing values
+mse12 <- colMeans(e12^2, na.rm = TRUE)
+
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:12, MSE = mse12) %>%
+ggplot(aes(x = h, y = MSE))+ geom_line() +
+xlab("Month") + ylab("MSE") +
+ggtitle("Cross-Validated Errors for 12 Steps Ahead Forecasts") +
+scale_x_continuous(breaks=seq(0,12,1)) +
+  scale_y_continuous(labels=scales::comma)+
+  theme_bw()
+```
+
+
+```{r}
+# Compute cross-validated errors for 1 step ahead
+e <- tsCV(gtdcount.ts, forecastfunction = farima1, h = 1)
+length(e)
+e
+
+# Compute the MSE values and remove missing values
+mse1 <- colMeans(matrix(e^2,ncol=12),na.rm=TRUE)
+
+# Plot the MSE values against the forecast horizon
+data.frame(h = 1:12, MSE = mse1) %>%
+ggplot(aes(x = h, y = MSE))+ geom_line() +
+xlab("Month") + ylab("MSE") +
+ggtitle("Cross-Validated Errors of for 1 Step Ahead Forecasts") +
+scale_x_continuous(breaks=seq(0,12,1)) +
+  scale_y_continuous(labels=scales::comma)+
+theme_bw()
+```
+
+

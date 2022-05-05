@@ -1,0 +1,118 @@
+---
+title: "Project Data Viz"
+author: "Mary Kryslette C. Bunyi"
+date: "2/10/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loads, warning=FALSE, include = FALSE}
+
+#Load libraries
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+
+library(tidyverse)
+library(forecast)
+library(astsa) 
+library(xts)
+library(tseries)
+library(fpp2)
+library(fma)
+library(TSstudio)
+library(quantmod)
+library(tidyquant)
+library(plotly)
+
+#Load data
+vix <- read.csv('Data/VIX.csv')
+vxeem <- read.csv('Data/VXEEM_History.csv')
+gtd_monthly <- read.csv('Data/gtd_monthly.csv')
+
+gtdcount.ts <- ts(data=gtd_monthly$count,
+   frequency=12,
+   start=c(1970,1))
+     
+
+# convert to date
+vix$DATE <- as.Date(vix$DATE, format="%Y-%m-%d")
+vxeem$DATE <- as.Date(vxeem$DATE, format="%m/%d/%Y")
+
+#daily data
+vix.ts = ts(data = vix$VIXCLS, 
+           start = decimal_date(vix$DATE[1]),
+           frequency = 365.25)
+
+vxeem.ts = ts(data = vxeem$CLOSE, 
+           start = decimal_date(vxeem$DATE[1]),
+           frequency = 365.25)
+
+
+gtd_monthly <-
+  gtd_monthly %>%
+  mutate(date = as.Date(paste0(iyear,'-',imonth,'-1'),
+                        format="%Y-%m-%d"))
+
+
+gtd_monthly_1990 <- gtd_monthly %>% filter(iyear>=1990) %>% ungroup()
+
+vix_monthly_2018 <-
+  vix %>%
+  filter(year(DATE)<=2018) %>%
+  mutate(month = month(DATE),
+         year = year(DATE),
+         VIXCLS=as.numeric(VIXCLS)) %>%
+  group_by(year,month) %>%
+  summarize(average=mean(VIXCLS, na.rm=TRUE)) %>%
+  ungroup() %>%
+  mutate(date = as.Date(paste0(year,'-',month,'-1'),
+                        format="%Y-%m-%d")) 
+
+username = "" #redacted
+api_key = "" #redacted
+
+Sys.setenv("plotly_username"=username)
+Sys.setenv("plotly_api_key"=api_key)
+
+
+fig <- plot_ly()
+fig <- fig %>%
+  add_trace(data = gtd_monthly_1990,type='scatter',mode='lines', x = ~date, y=~count, name='Terrorism Incidents')
+
+ay <- list(
+  tickfont = list(color = "black"),
+  overlaying = "y",
+  side = "right",
+  title = "Average Monthly VIX (Stock Market Volatility) Index")
+
+fig <- fig %>% add_trace(x = vix_monthly_2018$date, y = vix_monthly_2018$average, name = "VIX (Stock Market Volatility)", yaxis = "y2",type='scatter',mode='lines')
+
+# Set figure title, x and y-axes titles
+fig <- fig %>% layout(
+  title = "Terrorism and Stock Market Volatility (1990-2018)", yaxis2 = ay,
+  xaxis = list(title="Year"),
+  yaxis = list(title="Number of Monthly Terrorism Incidents")
+)
+
+fig
+
+api_create(fig, filename = "gtd-vs-vix")
+
+
+## OTHER VIZ
+plot_ly(gtd_monthly_1990, type='scatter',mode='lines') %>%
+  add_trace(x = ~date, y = ~count) %>%
+  layout(showlegend=F) 
+
+gtd_monthly  %>%
+   plot_ly(x=~iyear, y=~count, color=~imonth,
+           type='violin', mode='lines')
+
+```
